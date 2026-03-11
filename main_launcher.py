@@ -4792,6 +4792,45 @@ class IntegratedRestaurantAppGUI:
                             bd=0)
         subtitle.place(relx=0.5, rely=0.22, anchor=tk.CENTER)  # Moved up slightly
 
+        # Check if day is closed - show simplified interface
+        if not is_open:
+            # Day is CLOSED - show only 2 buttons: OPEN DAY and LOGOUT
+
+            # OPEN DAY button - centered, large
+            open_day_btn = tk.Button(main_container,
+                                     text="🔓 OPEN DAY",
+                                     font=('Segoe UI', 18, 'bold'),
+                                     bg='#27ae60',
+                                     fg='white',
+                                     activebackground='#229954',
+                                     activeforeground='white',
+                                     relief=tk.RAISED,
+                                     bd=3,
+                                     cursor='hand2',
+                                     width=20,
+                                     height=2,
+                                     command=lambda: self.handle_menu_command('open_day'))
+            open_day_btn.place(relx=0.5, rely=0.45, anchor=tk.CENTER)
+
+            # LOGOUT button - centered below
+            logout_btn = tk.Button(main_container,
+                                   text="🚪 LOGOUT",
+                                   font=('Segoe UI', 18, 'bold'),
+                                   bg='#e74c3c',
+                                   fg='white',
+                                   activebackground='#c0392b',
+                                   activeforeground='white',
+                                   relief=tk.RAISED,
+                                   bd=3,
+                                   cursor='hand2',
+                                   width=20,
+                                   height=2,
+                                   command=lambda: self.handle_menu_command('logout'))
+            logout_btn.place(relx=0.5, rely=0.60, anchor=tk.CENTER)
+
+            return  # Don't show the full menu
+
+        # Day is OPEN - show full menu
         # Create two columns for buttons - directly on image
         # Left column buttons
         left_buttons = [
@@ -5076,6 +5115,8 @@ class IntegratedRestaurantAppGUI:
             self.open_popup('settings')
         elif command_id == 'close_day':
             self.close_day()
+        elif command_id == 'open_day':
+            self.open_day()
         elif command_id == 'logout':
             self.logout()
 
@@ -10378,6 +10419,29 @@ class IntegratedRestaurantAppGUI:
                 print(f"Close day final error: {e}")
                 import traceback
                 traceback.print_exc()
+
+    def open_day(self):
+        """Open a new day."""
+        try:
+            if self.day_manager.check_today_status():
+                self.show_warning("Day is already open")
+                return
+
+            # Ask for opening cash
+            opening_cash = simpledialog.askfloat("Open Day",
+                                                 "Enter opening cash amount:",
+                                                 parent=self.root, minvalue=0)
+
+            if opening_cash is not None:
+                self.day_manager.start_day(opening_cash)
+                self.show_info(f"✅ Day opened successfully!\n\nOpening Cash: ₹{opening_cash:.2f}")
+                self.create_main_menu()
+
+        except Exception as e:
+            self.show_error(f"Error opening day:\n{str(e)}")
+            print(f"Open day error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def print_new_items_only(self, order_id):
         """Print only items that haven't been printed to kitchen/desk yet - properly aligned."""
