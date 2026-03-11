@@ -3470,7 +3470,7 @@ class RestaurantBillingManager:
         return [dict(r) for r in results] if results else []
 
     def _send_to_printer(self, job):
-        """Send job to printer using Windows printing (silent)"""
+        """Send job to printer with preview then auto-print"""
         try:
             printer_type = job['printer']  # 'kitchen', 'desk', or 'bill'
 
@@ -3482,7 +3482,10 @@ class RestaurantBillingManager:
 
             printer_name = printer_info["name"]
             if not printer_name:
-                printer_name = win32print.GetDefaultPrinter()
+                if PRINTER_AVAILABLE:
+                    printer_name = win32print.GetDefaultPrinter()
+                else:
+                    printer_name = "No Printer"
 
             # Format content based on printer type
             if printer_type == 'kitchen':
@@ -3498,30 +3501,103 @@ class RestaurantBillingManager:
             width = printer_info.get('width', 40)
             formatted = self.printer_manager.format_receipt(content, width)
 
-            # Send to printer
-            try:
-                hprinter = win32print.OpenPrinter(printer_name)
-                job_id = win32print.StartDocPrinter(hprinter, 1, ("POS Receipt", None, "RAW"))
-                win32print.StartPagePrinter(hprinter)
-
-                # Write the formatted content
-                win32print.WritePrinter(
-                    hprinter,
-                    formatted.encode('cp437', 'ignore')
-                )
-
-                win32print.EndPagePrinter(hprinter)
-                win32print.EndDocPrinter(hprinter)
-                win32print.ClosePrinter(hprinter)
-
-                print(f"✅ Printed successfully to {printer_type} on {printer_name}")
-
-            except Exception as e:
-                print(f"❌ Printer error: {e}")
+            # Show preview in a dialog
+            self._show_print_preview_and_print(formatted, printer_type, printer_name)
 
         except Exception as e:
             print(f"Printer error: {e}")
             traceback.print_exc()
+
+    def _show_print_preview_and_print(self, content, printer_type, printer_name):
+        """Show preview dialog and automatically print after 2 seconds"""
+        preview_dialog = tk.Toplevel(self.gui.root if self.gui else None)
+        preview_dialog.title(f"{printer_type.upper()} Print Preview")
+        preview_dialog.geometry("500x600")
+        preview_dialog.configure(bg='white')
+
+        # Title
+        title_label = tk.Label(preview_dialog,
+                              text=f"📄 {printer_type.upper()} PREVIEW",
+                              font=('Segoe UI', 14, 'bold'),
+                              bg='#2e86c1', fg='white', pady=10)
+        title_label.pack(fill=tk.X)
+
+        # Printer info
+        info_label = tk.Label(preview_dialog,
+                             text=f"Printer: {printer_name}",
+                             font=('Segoe UI', 10),
+                             bg='white', fg='#555')
+        info_label.pack(pady=5)
+
+        # Preview text area
+        text_frame = tk.Frame(preview_dialog, bg='white')
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        text_widget = tk.Text(text_frame, font=('Courier New', 9),
+                             bg='#f5f5f5', fg='black',
+                             relief=tk.SOLID, borderwidth=1)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = tk.Scrollbar(text_frame, command=text_widget.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        text_widget.config(yscrollcommand=scrollbar.set)
+
+        # Insert content
+        text_widget.insert('1.0', content)
+        text_widget.config(state=tk.DISABLED)
+
+        # Status label
+        status_label = tk.Label(preview_dialog,
+                               text="⏳ Printing in 2 seconds...",
+                               font=('Segoe UI', 11, 'bold'),
+                               bg='white', fg='#e67e22')
+        status_label.pack(pady=10)
+
+        # Auto-print after 2 seconds
+        def auto_print():
+            try:
+                status_label.config(text="🖨️ Sending to printer...", fg='#2e86c1')
+                preview_dialog.update()
+
+                if PRINTER_AVAILABLE:
+                    # Send to printer
+                    hprinter = win32print.OpenPrinter(printer_name)
+                    job_id = win32print.StartDocPrinter(hprinter, 1, ("POS Receipt", None, "RAW"))
+                    win32print.StartPagePrinter(hprinter)
+
+                    win32print.WritePrinter(
+                        hprinter,
+                        content.encode('cp437', 'ignore')
+                    )
+
+                    win32print.EndPagePrinter(hprinter)
+                    win32print.EndDocPrinter(hprinter)
+                    win32print.ClosePrinter(hprinter)
+
+                    status_label.config(text="✅ Printed successfully!", fg='#27ae60')
+                    print(f"✅ Printed successfully to {printer_type} on {printer_name}")
+                else:
+                    status_label.config(text="❌ Printer not available", fg='#c0392b')
+                    print("❌ Printer module not available")
+
+                # Close dialog after 1 second
+                preview_dialog.after(1000, preview_dialog.destroy)
+
+            except Exception as e:
+                status_label.config(text=f"❌ Print failed: {str(e)[:30]}", fg='#c0392b')
+                print(f"❌ Printer error: {e}")
+                preview_dialog.after(2000, preview_dialog.destroy)
+
+        # Schedule auto-print
+        preview_dialog.after(2000, auto_print)
+
+        # Close button (in case user wants to cancel)
+        close_btn = tk.Button(preview_dialog, text="✕ CANCEL",
+                             font=('Segoe UI', 10, 'bold'),
+                             bg='#c0392b', fg='white',
+                             command=preview_dialog.destroy,
+                             padx=15, pady=5)
+        close_btn.pack(pady=10)
 
     def _format_kitchen_slip(self, job):
         """Format kitchen slip"""
@@ -10170,17 +10246,30 @@ class IntegratedRestaurantAppGUI:
 
     def close_day(self):
         """Close the current day."""
-        if not self.day_manager.check_today_status():
-            self.show_warning("Day is already closed")
+        try:
+            if not self.day_manager.check_today_status():
+                self.show_warning("Day is already closed")
+                return
+
+            report = self.restaurant.get_daily_sales_report()
+
+            if not report:
+                self.show_error("Failed to generate sales report. Please try again.")
+                return
+
+            day_summary = report.get('day_summary')
+
+            opening_cash = day_summary.get('opening_cash', 0) if day_summary else 0
+            expected_cash = report.get('restaurant_cash', 0) + opening_cash
+        except Exception as e:
+            self.show_error(f"Error preparing close day report:\n{str(e)}")
+            print(f"Close day error: {e}")
+            import traceback
+            traceback.print_exc()
             return
 
-        report = self.restaurant.get_daily_sales_report()
-        day_summary = report['day_summary']
-
-        opening_cash = day_summary.get('opening_cash', 0) if day_summary else 0
-        expected_cash = report['restaurant_cash'] + opening_cash
-
-        summary = f"""
+        try:
+            summary = f"""
    {'=' * 50}
    TODAY'S CLOSING SUMMARY
    {'=' * 50}
@@ -10188,42 +10277,48 @@ class IntegratedRestaurantAppGUI:
 
    CASH BALANCE:
    Opening Cash: {' ' * 20} ₹{opening_cash:>10.2f}
-   Restaurant Cash Sales: {' ' * 14} ₹{report['restaurant_cash']:>10.2f}
+   Restaurant Cash Sales: {' ' * 14} ₹{report.get('restaurant_cash', 0):>10.2f}
    {'-' * 50}
    Expected Cash in Drawer: {' ' * 13} ₹{expected_cash:>10.2f}
 
    SALES SUMMARY:
-   Total Bills: {report['total_bills']}
-   ├─ Restaurant Bills: {report['restaurant_bills']}
-   └─ Room Service Bills: {report['room_bills']}
+   Total Bills: {report.get('total_bills', 0)}
+   ├─ Restaurant Bills: {report.get('restaurant_bills', 0)}
+   └─ Room Service Bills: {report.get('room_bills', 0)}
 
    RESTAURANT BREAKDOWN:
-   Cash: ₹{report['restaurant_cash']:>10.2f}
-   Card: ₹{report['restaurant_card']:>10.2f}
-   UPI:  ₹{report['restaurant_upi']:>10.2f}
+   Cash: ₹{report.get('restaurant_cash', 0):>10.2f}
+   Card: ₹{report.get('restaurant_card', 0):>10.2f}
+   UPI:  ₹{report.get('restaurant_upi', 0):>10.2f}
    {'-' * 50}
-   RESTAURANT TOTAL: ₹{report['restaurant_total']:>10.2f}
+   RESTAURANT TOTAL: ₹{report.get('restaurant_total', 0):>10.2f}
 
-   ROOM SERVICE TOTAL: ₹{report['room_total']:>10.2f}
+   ROOM SERVICE TOTAL: ₹{report.get('room_total', 0):>10.2f}
    (to be added to hotel bill)
 
-   COMPLIMENTARY TOTAL: ₹{report['complimentary_total']:>10.2f}
+   COMPLIMENTARY TOTAL: ₹{report.get('complimentary_total', 0):>10.2f}
 
    {'=' * 50}
    Do you want to close the day?
    """
 
-        if not self.ask_confirmation(summary):
-            return
+            if not self.ask_confirmation(summary):
+                return
 
-        actual_cash = simpledialog.askfloat("Close Day",
-                                            f"""Enter actual cash count:
+            actual_cash = simpledialog.askfloat("Close Day",
+                                                f"""Enter actual cash count:
 
    Expected Cash: ₹{expected_cash:.2f}
-   Room Service Cash (separate): ₹{report['room_cash']:.2f}
+   Room Service Cash (separate): ₹{report.get('room_cash', 0):.2f}
 
    Actual cash in drawer:""",
-                                            parent=self.root, minvalue=0)
+                                                parent=self.root, minvalue=0)
+        except Exception as e:
+            self.show_error(f"Error displaying close day summary:\n{str(e)}")
+            print(f"Summary display error: {e}")
+            import traceback
+            traceback.print_exc()
+            return
 
         if actual_cash is not None:
             try:
@@ -10332,7 +10427,7 @@ class IntegratedRestaurantAppGUI:
 
             desk_formatted = '\n'.join(desk_content)
 
-            # Send to printer queue
+            # Send to printer queue - DIRECT PRINT (no preview)
             self.restaurant.printer_queue.put({
                 'printer': 'kitchen',
                 'content': kitchen_formatted
@@ -10342,10 +10437,8 @@ class IntegratedRestaurantAppGUI:
                 'content': desk_formatted
             })
 
-            # Show preview in GUI
-            self.show_kitchen_preview(f"Order {order['order_number']} - NEW ITEMS", kitchen_formatted)
-            self.show_print_preview(f"Order {order['order_number']} - NEW ITEMS", desk_formatted, "desk",
-                                    printer_width=desk_width)
+            # Show success message instead of preview
+            self.show_info(f"✅ Printing {len(unprinted_items)} new item(s) to Kitchen & Desk printers...")
 
             # Mark items as printed
             for item in unprinted_items:
