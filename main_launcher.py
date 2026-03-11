@@ -2211,9 +2211,10 @@ class RestaurantBillingManager:
 
         self.update_order_totals(order_id)
 
-        # Print ONLY this new item (not all items)
-        if new_item_id:
-            self.print_new_order_item(order_id, new_item_id)
+        # DO NOT auto-print when adding items from Menu Items tab
+        # User will manually click "Print New Items" button in Order Items tab
+        # if new_item_id:
+        #     self.print_new_order_item(order_id, new_item_id)
 
         return True
 
