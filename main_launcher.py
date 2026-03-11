@@ -3574,29 +3574,30 @@ class RestaurantBillingManager:
                     win32print.EndDocPrinter(hprinter)
                     win32print.ClosePrinter(hprinter)
 
-                    status_label.config(text="✅ Printed successfully!", fg='#27ae60')
+                    status_label.config(text="✅ Printed successfully! (Closing in 3s)", fg='#27ae60')
                     print(f"✅ Printed successfully to {printer_type} on {printer_name}")
-                else:
-                    status_label.config(text="❌ Printer not available", fg='#c0392b')
-                    print("❌ Printer module not available")
 
-                # Close dialog after 1 second
-                preview_dialog.after(1000, preview_dialog.destroy)
+                    # Close dialog after 3 seconds
+                    preview_dialog.after(3000, preview_dialog.destroy)
+                else:
+                    status_label.config(text="ℹ️ PREVIEW ONLY - No printer attached (Click Close to exit)", fg='#e67e22')
+                    print(f"ℹ️ Preview shown for {printer_type} - Printer module not available")
+                    # Don't auto-close when no printer - let user review and close manually
 
             except Exception as e:
-                status_label.config(text=f"❌ Print failed: {str(e)[:30]}", fg='#c0392b')
+                status_label.config(text=f"❌ Print failed: {str(e)[:40]}", fg='#c0392b')
                 print(f"❌ Printer error: {e}")
-                preview_dialog.after(2000, preview_dialog.destroy)
+                # Don't auto-close on error - let user see the error
 
         # Schedule auto-print
         preview_dialog.after(2000, auto_print)
 
-        # Close button (in case user wants to cancel)
-        close_btn = tk.Button(preview_dialog, text="✕ CANCEL",
+        # Close button
+        close_btn = tk.Button(preview_dialog, text="✕ CLOSE",
                              font=('Segoe UI', 10, 'bold'),
-                             bg='#c0392b', fg='white',
+                             bg='#95a5a6', fg='white',
                              command=preview_dialog.destroy,
-                             padx=15, pady=5)
+                             padx=20, pady=8)
         close_btn.pack(pady=10)
 
     def _format_kitchen_slip(self, job):
@@ -10327,34 +10328,40 @@ class IntegratedRestaurantAppGUI:
                 variance = actual_cash - expected_cash
                 variance_status = "OVER" if variance > 0 else "SHORT" if variance < 0 else "BALANCED"
 
+                restaurant_cash = report.get('restaurant_cash', 0)
+                room_cash = report.get('room_cash', 0)
+
                 if abs(variance) < 0.01:
                     self.show_info(
                         f"""✅ Day closed successfully!
 
    Opening Cash: ₹{opening_cash:.2f}
-   Restaurant Cash Sales: ₹{report['restaurant_cash']:.2f}
+   Restaurant Cash Sales: ₹{restaurant_cash:.2f}
    Expected: ₹{expected_cash:.2f}
    Actual: ₹{actual_cash:.2f}
    Variance: ₹0.00 (BALANCED)
 
-   Room Service Cash to deposit: ₹{report['room_cash']:.2f}""")
+   Room Service Cash to deposit: ₹{room_cash:.2f}""")
                 else:
                     self.show_warning(
                         f"""⚠️ Day closed with variance!
 
    Opening Cash: ₹{opening_cash:.2f}
-   Restaurant Cash Sales: ₹{report['restaurant_cash']:.2f}
+   Restaurant Cash Sales: ₹{restaurant_cash:.2f}
    Expected: ₹{expected_cash:.2f}
    Actual: ₹{actual_cash:.2f}
    Variance: ₹{variance:.2f} ({variance_status})
 
    Please record this discrepancy.
-   Room Service Cash to deposit: ₹{report['room_cash']:.2f}""")
+   Room Service Cash to deposit: ₹{room_cash:.2f}""")
 
                 self.create_main_menu()
 
             except Exception as e:
-                self.show_error(str(e))
+                self.show_error(f"Error closing day:\n{str(e)}")
+                print(f"Close day final error: {e}")
+                import traceback
+                traceback.print_exc()
 
     def print_new_items_only(self, order_id):
         """Print only items that haven't been printed to kitchen/desk yet - properly aligned."""
