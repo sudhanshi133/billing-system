@@ -12,12 +12,20 @@ import queue
 import threading
 import time
 import re
-from PIL import Image, ImageDraw, ImageFont, ImageTk
-import tempfile
 import os
-# Add this near your other imports at the top of the file
-from PIL import ImageWin
 import traceback
+
+# Pillow compatibility - handle different versions
+try:
+    from PIL import ImageWin
+except ImportError:
+    ImageWin = None
+
+# Handle different Pillow versions for resampling
+try:
+    RESAMPLE_FILTER = Image.Resampling.LANCZOS
+except AttributeError:
+    RESAMPLE_FILTER = Image.LANCZOS
 
 # Windows printer support
 try:
@@ -4659,6 +4667,10 @@ class IntegratedRestaurantAppGUI:
 
     def create_main_menu(self):
         """Create the main menu screen - absolutely NO white backgrounds, only image visible."""
+        # Clear existing main frame if it exists
+        if hasattr(self, 'main_frame') and self.main_frame:
+            self.main_frame.destroy()
+
         self.main_frame = tk.Frame(self.root, bg='#f8f9fa')
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -4671,8 +4683,11 @@ class IntegratedRestaurantAppGUI:
 
         # BACKGROUND IMAGE - FULL SCREEN (THIS IS THE ONLY BACKGROUND)
         try:
-            # Use the correct image path
-            image_path = r"C:\Users\sanan\Downloads\resort.jpeg"
+            # Use the correct image path - check for Windows or macOS
+            if os.name == 'nt':  # Windows
+                image_path = r"C:\Users\sanan\Downloads\resort.jpeg"
+            else:  # macOS/Linux - skip background image
+                raise FileNotFoundError("Background image not configured for macOS")
 
             # Check if file exists
             import os
@@ -4693,7 +4708,7 @@ class IntegratedRestaurantAppGUI:
 
             # Load and resize image to fit screen
             img = Image.open(image_path)
-            img = img.resize((screen_width, screen_height), Image.Resampling.LANCZOS)
+            img = img.resize((screen_width, screen_height), RESAMPLE_FILTER)
             self.bg_photo = ImageTk.PhotoImage(img)
 
             # Create label with image that fills the entire container
@@ -4705,7 +4720,7 @@ class IntegratedRestaurantAppGUI:
                 if event.width > 1 and event.height > 1:  # Avoid invalid dimensions
                     try:
                         new_img = Image.open(image_path)
-                        new_img = new_img.resize((event.width, event.height), Image.Resampling.LANCZOS)
+                        new_img = new_img.resize((event.width, event.height), RESAMPLE_FILTER)
                         new_photo = ImageTk.PhotoImage(new_img)
                         bg_label.config(image=new_photo)
                         bg_label.image = new_photo  # Keep a reference
