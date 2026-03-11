@@ -10427,7 +10427,7 @@ class IntegratedRestaurantAppGUI:
 
             desk_formatted = '\n'.join(desk_content)
 
-            # Send to printer queue - DIRECT PRINT (no preview)
+            # Send to printer queue - WITH PREVIEW then AUTO-PRINT
             self.restaurant.printer_queue.put({
                 'printer': 'kitchen',
                 'content': kitchen_formatted
@@ -10436,9 +10436,6 @@ class IntegratedRestaurantAppGUI:
                 'printer': 'desk',
                 'content': desk_formatted
             })
-
-            # Show success message instead of preview
-            self.show_info(f"✅ Printing {len(unprinted_items)} new item(s) to Kitchen & Desk printers...")
 
             # Mark items as printed
             for item in unprinted_items:
@@ -10450,8 +10447,6 @@ class IntegratedRestaurantAppGUI:
 
             # Refresh the order items display to show updated printed status
             self.load_order_items_popup(order_id)
-
-            self.show_info(f"✅ Printed {len(unprinted_items)} new item(s)")
 
         except Exception as e:
             self.show_error(f"Error printing new items: {str(e)}")
